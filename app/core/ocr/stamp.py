@@ -1,9 +1,9 @@
 from typing import Optional, Tuple
 import numpy as np
 import cv2
-from app.core.labels import STAMP_TEMPLATES
+from app.core.ocr.labels import STAMP_TEMPLATES
 from app.stamp_verifier import detect_stamp_regions, verify_stamp_with_template
-from app.core.certificates import render_page_png_bytes
+from app.core.ocr.certificates import render_page_png_bytes
 
 
 def detect_stamp_bbox(page_bgr: np.ndarray) -> Optional[Tuple[int, int, int, int]]:

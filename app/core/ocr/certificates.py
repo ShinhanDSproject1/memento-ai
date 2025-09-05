@@ -6,7 +6,7 @@ from PIL import Image, ImageDraw
 import numpy as np
 import cv2
 
-from app.core.labels import (
+from app.core.ocr.labels import (
     LABEL_PATTERNS_INFORPROC,
     LABEL_PATTERNS_ADSP,
     LABEL_PATTERNS_SQLD,
@@ -193,7 +193,7 @@ def detect_stamp_bbox_px_from_pdf_image(
     pdf_bytes: bytes, page_index: int, zoom: float
 ) -> Optional[Tuple[int, int, int, int]]:
     try:
-        from app.core.stamp import detect_stamp_bbox
+        from app.core.ocr.stamp import detect_stamp_bbox
 
         page_png = render_page_png_bytes(pdf_bytes, page_index=page_index, zoom=zoom)
         arr = np.frombuffer(page_png, np.uint8)
