@@ -2,7 +2,7 @@ from fastapi import APIRouter, UploadFile, File, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 import io, traceback
 
-from app.core.certificates import (
+from app.core.ocr.certificates import (
     detect_certificate_type_from_pdf,
     extract_inforproc,
     extract_adsp,
@@ -11,9 +11,9 @@ from app.core.certificates import (
     render_page_png_bytes,
     detect_stamp_bbox_px_from_pdf_image,
 )
-from app.core.labels import ALLOWED_CERT_CODES, CERT_NAME_MAP, THRESHOLD
-from app.core.stamp import compute_stamp_similarity_and_bbox
-from app.s3_uploader import upload_certification_image
+from app.core.ocr.labels import ALLOWED_CERT_CODES, CERT_NAME_MAP, THRESHOLD
+from app.core.ocr.stamp import compute_stamp_similarity_and_bbox
+from app.core.storage.s3_uploader import upload_certification_image
 
 router = APIRouter()
 
