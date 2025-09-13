@@ -28,7 +28,14 @@ dist/
 # Env files
 .env
 
+# json files
+.jsonl
+.json
+
 # Test
 .coverage
 .pytest_cache/
 htmlcov/
+
+# Gradio에서 생성하는 임시 파일
+.gradio/
