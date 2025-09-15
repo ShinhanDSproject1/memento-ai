@@ -1,4 +1,4 @@
 from pydantic import BaseModel
 
 class TextRequest(BaseModel):
-    text: str
+    queries: list[str]

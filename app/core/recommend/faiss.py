@@ -6,13 +6,17 @@ from langchain_community.vectorstores import FAISS
 from langchain_community.vectorstores.utils import DistanceStrategy
 from langchain.load import dumps, loads
 from typing import List
+from sqlalchemy.orm import Session
+import pandas as pd
+from bs4 import BeautifulSoup
+from sqlalchemy import text 
 
 def make_document(df):
     documents = []
     for index, row in df.iterrows():
         doc = Document(
-            page_content=row['content'],
-            title = row['title'],
+            page_content=row['mentos_content'],
+            title = row['mentos_title'],
         )
         documents.append(doc)
     return documents
@@ -39,11 +43,19 @@ def reciprocal_rank_fusion(results: List[List[Document]], k=60):
             
             fused_scores[doc_key] += 1 / (rank + 1 + k)
 
-    reranked_results = [
+    reciprocal_rank_fusion_results = [
         (doc_map[doc_key], score)
         for doc_key, score in sorted(fused_scores.items(), key=lambda x: x[1], reverse=True)
     ]
-    return reranked_results
+    return reciprocal_rank_fusion_results
 
 def make_vector_retriever(vectorstore):
     return vectorstore.as_retriever()
+
+def select_mentos_data_to_df(db: Session):
+    result = db.execute(text("SELECT mentos_seq, mentos_title, mentos_content FROM mentos WHERE status = 'ACTIVE'")).fetchall()
+    mentos_df = pd.DataFrame(result, columns=['mentos_seq', 'mentos_title', 'mentos_content'])
+
+    mentos_df['mentos_content'] = mentos_df['mentos_content'].apply(lambda x: BeautifulSoup(x, 'html.parser').get_text(strip=True))
+
+    return mentos_df
