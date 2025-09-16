@@ -5,6 +5,7 @@ from app.api.ai import router as ai_router
 from contextlib import asynccontextmanager
 from sentence_transformers import SentenceTransformer
 from langchain_huggingface import HuggingFaceEmbeddings
+from sentence_transformers import CrossEncoder
 import mysql.connector
 from app.db.database import get_db
 import os
@@ -31,7 +32,8 @@ async def lifespan(app: FastAPI):
         logger.error("DB connect error: %s", err, exc_info=True)
     
     try:
-        model_name = "josangho99/ko-paraphrase-multilingual-MiniLM-L12-v2-multiTask"
+        #model_name = "josangho99/ko-paraphrase-multilingual-MiniLM-L12-v2-multiTask"
+        model_name = "intfloat/multilingual-e5-small"
         app.state.model = HuggingFaceEmbeddings(
             model_name=model_name,
             model_kwargs={'device':'cpu'},
@@ -40,6 +42,7 @@ async def lifespan(app: FastAPI):
         logger.info("AI model loading success!")
     except Exception as e:
         logger.error("AI model loading error: %s", e, exc_info=True)
+        app.state.model = None
 
     try:
         API_URL = "josangho99/memento-chatbot"
@@ -49,6 +52,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("LLM model loading error: %s", e, exc_info=True)
         app.state.llm = None
+
+    try:
+        reranker_model_url = 'kkresearch/bge-reranker-v2-m3-korean-finance'
+        #reranker_model_url = 'Dongjin-kr/ko-reranker'
+        app.state.reranker = CrossEncoder(reranker_model_url)
+
+    except Exception as e:
+        logger.error("Reranker model loading error: %s", e, exc_info=True)
+        app.state.reranker = None
 
     yield
     logger.info("Application shutdown...")
