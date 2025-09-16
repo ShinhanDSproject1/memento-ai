@@ -4,8 +4,11 @@ from app.schemas.text_schema import TextRequest
 from app.schemas.message import Message
 from app.db.database import get_db
 import pandas as pd
+import json
+import re
 from fastapi.responses import JSONResponse
 from app.utils.logger import setup_logger
+from app.utils.utils import deduplicate_results, extract_user_utterances
 from app.core.recommend.chat_bot import LLMAgentService, AgentExecutionError
 from app.core.recommend.faiss import(
     make_document,
@@ -27,9 +30,8 @@ from app.core.recommend.rerank import(
 logger = setup_logger()
 router = APIRouter()
 llm_service = LLMAgentService()
-conversation_memory = {}
     
-@router.get("/chatbot")
+@router.get("/chatbot/{member_seq}")
 async def chatbot_by_gpt(request: Request):
     llm_model = request.app.state.llm
 
@@ -49,44 +51,152 @@ async def chatbot_by_gpt(request: Request):
     )
 
 @router.post("/chatbot")
-async def chat_with_bot(request: Request, message:Message):
+async def chat_with_bot(request: Request, message: Message):
     llm_model = request.app.state.llm
     system_message = request.app.state.system_message
+    conversation_memory = request.app.state.conversation_memory
 
     if not llm_model:
-        return JSONResponse(
-                {"error": "LLM 모델이 로드되지 않았습니다."},
-                status_code=500,
-        )
-    
-    user_id = message.user_id
+        return JSONResponse({"error": "LLM 모델이 로드되지 않았습니다."}, status_code=500)
+
+    member_seq = message.member_seq
     user_input = message.content
+    logger.info(f"사용자 {member_seq}의 새 입력: {user_input}")
 
-    history = conversation_memory.get(user_id, "")
-
+    history_list = conversation_memory.get(member_seq, [])
+    history_string = "\n".join([
+        f"{'사용자' if item['role'] == 'user' else '챗봇'}: {item['content']}"
+        for item in history_list
+    ])
+    
     try:
-        response_from_agent, is_ready = await llm_service.run_agent_flow(user_id, user_input, llm_model, history, system_message)
-
-        new_entry = f"사용자: {user_input}\n챗봇: {response_from_agent}\n"
-        conversation_memory[user_id] = history + new_entry
+        llm_agent_response, is_ready_check = await llm_service.run_agent_flow(
+            user_input=user_input,
+            llm_client=llm_model,
+            conversation_history=history_string,
+            system_message=system_message
+        )
+        logger.info(f"LLM 에이전트 응답: {llm_agent_response}")
+        logger.info(f"추천 준비 상태: {is_ready_check}")
         
-        return JSONResponse(
-            {
-                "response": response_from_agent,
-                "recommendation_ready": is_ready,
-            },
-            status_code=200,
-        )
+        final_response_text = ""
+        recommendation_data = None
 
-    except AgentExecutionError as e:
-        return JSONResponse(
-            {"error": str(e)},
-            status_code=500,
-        )
+        if llm_agent_response == "irrelevant":
+            final_response_text = "죄송하지만, 저는 금융과 재테크 분야에 대한 질문에만 답변할 수 있어요. 혹시 이와 관련하여 궁금한 점이 있으신가요?"
+            history_list.append({"role": "user", "content": user_input, "topic": "general"})
+            history_list.append({"role": "assistant", "content": final_response_text, "topic": "general"})
+            
+            logger.info("무관한 질문으로 판단되어 일반 대화로 기록합니다.")
+        elif llm_agent_response.startswith('{"update":'):
+            try:
+                # 이 부분을 별도의 try-except 블록으로 감싸야 함
+                update_data_json_string = re.search(r'\{.*?\}', llm_agent_response).group(0)
+                update_data = json.loads(update_data_json_string)
+                logger.info(f"성공적으로 파싱된 업데이트 데이터: {update_data}")
+                # 이제 update_data 딕셔너리를 사용
+            except (json.JSONDecodeError, AttributeError) as e:
+                logger.error(f"JSON 파싱 오류! LLM 응답: {llm_agent_response}", exc_info=True)
+                final_response_text = "죄송하지만, 응답을 처리하는 중 오류가 발생했어요. 다시 말씀해주시겠어요?"
+                history_list.append({"role": "user", "content": user_input, "topic": "general"})
+                history_list.append({"role": "assistant", "content": final_response_text, "topic": "general"})
+                conversation_memory[member_seq] = history_list
+                return JSONResponse({"response": final_response_text, "recommendation_ready": is_ready_check}, status_code=500)
+            
+            is_updated = False
+            for item in history_list:
+                # 사용자의 발화만 업데이트
+                if item.get('role') == 'user' and item.get('topic') == list(update_data.keys())[0]:
+                    logger.info(f"기존 항목 업데이트: {item['content']} -> {user_input}")
+                    item['content'] = user_input
+                    is_updated = True
+                    break
+            
+            if not is_updated:
+                history_list.append({"role": "user", "content": user_input, "topic": list(update_data.keys())[0]})
+                logger.info(f"새로운 항목 추가: {user_input} (주제: {list(update_data.keys())[0]})")
+            
+            updated_history_string = "\n".join([
+                f"{'사용자' if item['role'] == 'user' else '챗봇'}: {item['content']}"
+                for item in history_list
+            ])
+            second_prompt = f"{system_message}\n{updated_history_string}\n사용자: {user_input}\n토리의 다음 답변:"
+            second_llm_response = llm_model.predict(second_prompt, ...)
+            final_response_text = second_llm_response.strip()
+
+            history_list.append({"role": "assistant", "content": final_response_text, "topic": "general"})
+            logger.info("정보 업데이트 완료 및 2차 LLM 응답 기록")
+
+        elif llm_agent_response == "final_response_needed":
+            logger.info("정보 수집 완료! 최종 응답 생성 시작.")
+            final_response_text = "이제 맞춤 정보를 찾아드릴 준비가 된 것 같아요! 추천해 드릴까요?"
+            
+            # 최종 대화도 기록
+            history_list.append({"role": "user", "content": user_input, "topic": "general"})
+            history_list.append({"role": "assistant", "content": final_response_text, "topic": "general"})
+
+            meaningful_sentences = [
+                item['content'] for item in history_list
+                if item['role'] == 'user' and item.get('topic') and item.get('topic') != 'general'
+            ]
+            recommendation_data = meaningful_sentences
+            logger.info(f"추천 데이터: {recommendation_data}")
+            
+        else:
+            final_response_text = llm_agent_response
+            history_list.append({"role": "user", "content": user_input, "topic": "general"})
+            history_list.append({"role": "assistant", "content": final_response_text, "topic": "general"})
+            logger.info("일반적인 대화 응답 기록")
+
+        conversation_memory[member_seq] = history_list
+
+        response_payload = {
+            "response": final_response_text,
+            "recommendation_ready": is_ready_check,
+        }
+        
+        if recommendation_data:
+            response_payload["recommendation_data"] = recommendation_data
+
+        if is_ready_check:
+        # ✅ 중복 제거 + 오류 응답 제거
+            cleaned_history = []
+            seen_pairs = set()
+
+            for item in history_list:
+                # "챗봇 서비스에 문제가 발생했습니다." 같은 오류 메시지는 제외
+                if item["content"].startswith("챗봇 서비스에 문제가 발생했습니다"):
+                    continue
+                
+                # 같은 user content + topic 조합은 한 번만 저장
+                key = (item["role"], item["content"], item.get("topic"))
+                if key not in seen_pairs:
+                    seen_pairs.add(key)
+                    cleaned_history.append(item)
+
+            response_payload["conversation_history"] = cleaned_history
+        logger.info(f"최종 응답 페이로드: {response_payload}")        
+        return JSONResponse(response_payload, status_code=200)
+
+    except Exception as e:
+        logger.error("알 수 없는 예외 발생", exc_info=True)
+        
+        # ✅ 대화는 유지하되, 에러 상태를 안내
+        error_message = "죄송하지만 지금은 답변을 할 수 없어요. 잠시 후 다시 시도해 주시겠어요?"
+        history_list.append({"role": "user", "content": user_input, "topic": "general"})
+        history_list.append({"role": "assistant", "content": error_message, "topic": "general"})
+        conversation_memory[member_seq] = history_list
+
+        return JSONResponse({
+            "response": error_message,
+            "recommendation_ready": False,
+            "error": True
+        }, status_code=200)
+
 
 #종합 쿼리(각 문장을 하나로 통합한 문장)로 invoke후 re-rank
 @router.post("/recommend")
-async def recommend2(request: Request, queries: TextRequest, db: Session = Depends(get_db)):
+async def recommend(request: Request, member_seq:int , queries: TextRequest, db: Session = Depends(get_db)):
     model = request.app.state.model
     llm_model = request.app.state.llm
     reranker_model = request.app.state.reranker
@@ -123,7 +233,8 @@ async def recommend2(request: Request, queries: TextRequest, db: Session = Depen
     query_doc_pairs = [[synthesized_query, doc.page_content] for doc in retrieved_docs]
     scores = reranker_model.predict(query_doc_pairs)
     scored_docs = sorted(zip(scores, retrieved_docs), key=lambda x: x[0], reverse=True)
-    top_5_docs = scored_docs[:5]
+    
+    top_5_docs = scored_docs[:15]
 
     final_results = [
         {
@@ -134,8 +245,16 @@ async def recommend2(request: Request, queries: TextRequest, db: Session = Depen
         for score, doc in top_5_docs
     ]
 
+    deduplicated_final_results = deduplicate_results(final_results)
+
+    final_top_3 = deduplicated_final_results[:3]
+
+    if member_seq in request.app.state.conversation_memory:
+        del request.app.state.conversation_memory[member_seq]
+        logger.info(f"사용자 {member_seq}의 챗봇 대화 기록이 초기화되었습니다.")
+
     return JSONResponse(
-        content={"synthesized_query": synthesized_query, "documents": final_results},
+        content={"synthesized_query": synthesized_query, "documents": final_top_3},
         status_code=200,
     )
 

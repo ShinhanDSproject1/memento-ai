@@ -24,6 +24,7 @@ QUERY_PROMPT = PromptTemplate(
     template=QUERY_PROMPT_TEMPLATE,
 )
 
+#무겁고 score는 비슷하나 의도와 전혀 다른 추천 리스트
 def kkma_tokenize(text):
     kkma = Kkma()
     return [token for token in kkma.morphs(text)]
@@ -36,6 +37,7 @@ def okt_tokenize(text):
 def make_bm25_retriever(documents, tokenize = None):
     if(tokenize):
         return BM25Retriever.from_documents(documents, preprocess_func=tokenize)
+    #score가 너무 떨어짐, 당연히 리스트도 별로 
     return KiwiBM25Retriever.from_documents(documents)
 
 def invoke_gradio_llm(input_data, llm_model):
@@ -71,7 +73,8 @@ def ensemble_retriever(vector_retriever, bm25_retriever, llm_model):
     multi_query_retriever = MultiQueryRetriever.from_llm(
         retriever=vector_retriever,
         llm=llm_as_runnable,
-        prompt=QUERY_PROMPT
+        prompt=QUERY_PROMPT,
+        k=50
     )
     #EnsembleRetriever가 RRF(Reciprocal rank fusion) 내장
     return EnsembleRetriever(

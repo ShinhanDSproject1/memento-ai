@@ -61,7 +61,8 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Reranker model loading error: %s", e, exc_info=True)
         app.state.reranker = None
-
+        
+    app.state.conversation_memory = {}
     yield
     logger.info("Application shutdown...")
     tunnel.close()
