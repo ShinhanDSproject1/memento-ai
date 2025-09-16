@@ -1,0 +1,18 @@
+# Python
+*.py text eol=lf
+
+# Jupyter / IPython
+*.ipynb text eol=lf
+
+# YAML / JSON / Markdown
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+
+# Windows 배치 파일 CRLF 유지
+*.bat text eol=crlf
+
+# 쉘 스크립트 LF 유지
+*.sh text eol=lf
