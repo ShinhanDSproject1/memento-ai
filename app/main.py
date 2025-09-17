@@ -34,7 +34,8 @@ async def lifespan(app: FastAPI):
     
     try:
         #model_name = "josangho99/ko-paraphrase-multilingual-MiniLM-L12-v2-multiTask"
-        model_name = "intfloat/multilingual-e5-small"
+        model_name = "korruz/bge-base-financial-matryoshka"
+        #model_name = "intfloat/multilingual-e5-small"
         app.state.model = HuggingFaceEmbeddings(
             model_name=model_name,
             model_kwargs={'device':'cpu'},
