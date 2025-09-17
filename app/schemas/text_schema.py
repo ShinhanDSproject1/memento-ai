@@ -1,4 +1,5 @@
 from pydantic import BaseModel
 from typing import List
-class TextRequest(BaseModel):
+class RecommendationRequest(BaseModel):
+    member_seq:int
     queries: List[str]

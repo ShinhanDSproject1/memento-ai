@@ -1,20 +1,5 @@
 import re
 
-def extract_user_utterances(history: str) -> list[str]:
-    """
-    전체 대화 기록 문자열에서 "사용자:"로 시작하는 문장들만 추출하여
-    리스트로 반환합니다.
-
-    Args:
-        history (str): "사용자: ...\n챗봇: ...\n" 형태의 전체 대화 기록
-
-    Returns:
-        List[str]: 사용자의 발언만 담긴 문자열 리스트
-    """
-    # 정규표현식을 사용하여 "사용자: " 뒷부분의 내용만 추출
-    user_utterances = re.findall(r"사용자: (.*)", history)
-    return user_utterances
-
 def deduplicate_results(documents: list[dict]) -> list[dict]:
     """
     'page_content'를 기준으로 문서 딕셔너리 리스트의 중복을 제거합니다.

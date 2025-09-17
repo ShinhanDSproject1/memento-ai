@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, Depends
 from sqlalchemy.orm import Session
-from app.schemas.text_schema import TextRequest
+from app.schemas.text_schema import RecommendationRequest
 from app.schemas.message import Message
 from app.db.database import get_db
 import pandas as pd
@@ -8,8 +8,9 @@ import json
 import re
 from fastapi.responses import JSONResponse
 from app.utils.logger import setup_logger
-from app.utils.utils import deduplicate_results, extract_user_utterances
-from app.core.recommend.chat_bot import LLMAgentService, AgentExecutionError
+from app.utils.utils import deduplicate_results
+from app.core.recommend.chat_bot import LLMAgentService
+
 from app.core.recommend.faiss import(
     make_document,
     vector_embedding,
@@ -23,6 +24,8 @@ from app.core.recommend.retriever import(
 )
 
 from app.core.recommend.rerank import(
+    extract_keywords_kkma,
+    rerank_documents_with_keywords,
     synthesize_query,
     build_ensemble_retrieve_re,
 )
@@ -64,16 +67,20 @@ async def chat_with_bot(request: Request, message: Message):
     logger.info(f"사용자 {member_seq}의 새 입력: {user_input}")
 
     history_list = conversation_memory.get(member_seq, [])
-    history_string = "\n".join([
-        f"{'사용자' if item['role'] == 'user' else '챗봇'}: {item['content']}"
-        for item in history_list
-    ])
+    messages = [{"role": "system", "content": system_message}]
     
+    for item in history_list:
+        messages.append({
+            "role": item["role"],
+            "content": item["content"]
+        })
+    messages.append({"role": "user", "content": user_input})
+
     try:
         llm_agent_response, is_ready_check = await llm_service.run_agent_flow(
             user_input=user_input,
             llm_client=llm_model,
-            conversation_history=history_string,
+            conversation_history=history_list,
             system_message=system_message
         )
         logger.info(f"LLM 에이전트 응답: {llm_agent_response}")
@@ -83,7 +90,10 @@ async def chat_with_bot(request: Request, message: Message):
         recommendation_data = None
 
         if llm_agent_response == "irrelevant":
-            final_response_text = "죄송하지만, 저는 금융과 재테크 분야에 대한 질문에만 답변할 수 있어요. 혹시 이와 관련하여 궁금한 점이 있으신가요?"
+            final_response_text = (
+                "죄송하지만, 저는 금융과 재테크 분야에 대한 질문에만 답변할 수 있어요."
+                " 혹시 이와 관련하여 궁금한 점이 있으신가요?"
+            )
             history_list.append({"role": "user", "content": user_input, "topic": "general"})
             history_list.append({"role": "assistant", "content": final_response_text, "topic": "general"})
             
@@ -101,7 +111,9 @@ async def chat_with_bot(request: Request, message: Message):
                 history_list.append({"role": "user", "content": user_input, "topic": "general"})
                 history_list.append({"role": "assistant", "content": final_response_text, "topic": "general"})
                 conversation_memory[member_seq] = history_list
-                return JSONResponse({"response": final_response_text, "recommendation_ready": is_ready_check}, status_code=500)
+                return JSONResponse(
+                    {"response": final_response_text, "recommendation_ready": is_ready_check}, status_code=500
+                )
             
             is_updated = False
             for item in history_list:
@@ -116,21 +128,26 @@ async def chat_with_bot(request: Request, message: Message):
                 history_list.append({"role": "user", "content": user_input, "topic": list(update_data.keys())[0]})
                 logger.info(f"새로운 항목 추가: {user_input} (주제: {list(update_data.keys())[0]})")
             
-            updated_history_string = "\n".join([
-                f"{'사용자' if item['role'] == 'user' else '챗봇'}: {item['content']}"
-                for item in history_list
-            ])
-            second_prompt = f"{system_message}\n{updated_history_string}\n사용자: {user_input}\n토리의 다음 답변:"
-            second_llm_response = llm_model.predict(second_prompt, ...)
-            final_response_text = second_llm_response.strip()
-
+            second_messages = [{"role": "system", "content": system_message}]
+            for item in history_list:
+                second_messages.append({"role": item["role"], "content": item["content"]})
+                second_messages.append({"role": "user", "content": user_input})
+            
+            second_response = llm_model.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=second_messages,
+                max_tokens=1024,
+                temperature=0.2,
+                top_p=0.95
+            )
+            
+            final_response_text = second_response.choices[0].message.content.strip()
             history_list.append({"role": "assistant", "content": final_response_text, "topic": "general"})
             logger.info("정보 업데이트 완료 및 2차 LLM 응답 기록")
 
         elif llm_agent_response == "final_response_needed":
             logger.info("정보 수집 완료! 최종 응답 생성 시작.")
             final_response_text = "이제 맞춤 정보를 찾아드릴 준비가 된 것 같아요! 추천해 드릴까요?"
-            
             # 최종 대화도 기록
             history_list.append({"role": "user", "content": user_input, "topic": "general"})
             history_list.append({"role": "assistant", "content": final_response_text, "topic": "general"})
@@ -173,8 +190,10 @@ async def chat_with_bot(request: Request, message: Message):
                 if key not in seen_pairs:
                     seen_pairs.add(key)
                     cleaned_history.append(item)
+            
+            user_history = [item["content"] for item in cleaned_history if item["role"] == "user"]
 
-            response_payload["conversation_history"] = cleaned_history
+            response_payload["conversation_history"] = user_history
         logger.info(f"최종 응답 페이로드: {response_payload}")        
         return JSONResponse(response_payload, status_code=200)
 
@@ -196,25 +215,21 @@ async def chat_with_bot(request: Request, message: Message):
 
 #종합 쿼리(각 문장을 하나로 통합한 문장)로 invoke후 re-rank
 @router.post("/recommend")
-async def recommend(request: Request, member_seq:int , queries: TextRequest, db: Session = Depends(get_db)):
+async def recommend(request: Request, data: RecommendationRequest, db: Session = Depends(get_db)):
     model = request.app.state.model
     llm_model = request.app.state.llm
     reranker_model = request.app.state.reranker
+    system_message = request.app.state.system_message
+
     if not model:
-        return JSONResponse(
-            {"result": "임베딩 모델이 로드되지 않았습니다."},
-            status_code=500,
-        )
+        return JSONResponse({"result": "임베딩 모델이 로드되지 않았습니다."}, status_code=500)
     if not llm_model:
-        return JSONResponse(
-            {"result": "LLM 모델이 로드되지 않았습니다."},
-            status_code=500,
-        )
+        return JSONResponse({"result": "LLM 모델이 로드되지 않았습니다."}, status_code=500)
     if not reranker_model:
-        return JSONResponse(
-            {"result": "Reranker 모델이 로드되지 않았습니다."},
-            status_code=500,
-        )
+        return JSONResponse({"result": "Reranker 모델이 로드되지 않았습니다."}, status_code=500)
+    
+    member_seq = data.member_seq
+    queries_list = data.queries
 
     mentos_df = select_mentos_data_to_df(db)
     logger.info(f"DataFrame loaded. Shape: {mentos_df.shape}")
@@ -227,10 +242,13 @@ async def recommend(request: Request, member_seq:int , queries: TextRequest, db:
     Otk_retriever = make_bm25_retriever(mentos_documents, okt_tokenize)
     mentos_ensemble_retriever = build_ensemble_retrieve_re(mentos_vector_retriever, Otk_retriever)
     
-    queries_list = queries.queries
-    synthesized_query = synthesize_query(queries_list, llm_model)
+    synthesized_query = synthesize_query(queries_list, llm_model, system_message)
+    keywords = extract_keywords_kkma(queries_list)
+
     retrieved_docs = mentos_ensemble_retriever.invoke(synthesized_query)
-    query_doc_pairs = [[synthesized_query, doc.page_content] for doc in retrieved_docs]
+    documents = rerank_documents_with_keywords(retrieved_docs, keywords)
+
+    query_doc_pairs = [[synthesized_query, doc.page_content] for doc in documents]
     scores = reranker_model.predict(query_doc_pairs)
     scored_docs = sorted(zip(scores, retrieved_docs), key=lambda x: x[0], reverse=True)
     
@@ -245,6 +263,7 @@ async def recommend(request: Request, member_seq:int , queries: TextRequest, db:
         for score, doc in top_5_docs
     ]
 
+    #mentos 중복 제거
     deduplicated_final_results = deduplicate_results(final_results)
 
     final_top_3 = deduplicated_final_results[:3]
@@ -253,6 +272,7 @@ async def recommend(request: Request, member_seq:int , queries: TextRequest, db:
         del request.app.state.conversation_memory[member_seq]
         logger.info(f"사용자 {member_seq}의 챗봇 대화 기록이 초기화되었습니다.")
 
+    #front에 뭐 보내줘야하는지 확인필요! title,mento,mento_profile,price,bname?
     return JSONResponse(
         content={"synthesized_query": synthesized_query, "documents": final_top_3},
         status_code=200,

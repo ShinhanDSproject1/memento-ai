@@ -8,7 +8,7 @@ class AgentExecutionError(Exception):
     pass
 
 class LLMAgentService:
-    async def run_agent_flow(self, user_input: str, llm_client, conversation_history: str, system_message: str) -> tuple[str, bool]:
+    async def run_agent_flow(self, user_input: str, llm_client, conversation_history: list, system_message: str) -> tuple[str, bool]:
         """
         LLM을 호출하여 사용자의 입력에 대한 응답과 상태를 판단합니다.
         """
@@ -48,22 +48,28 @@ class LLMAgentService:
             - JSON 태그 내 key와 value는 반드시 큰따옴표(")를 한 번만 사용해야 합니다.
             - JSON 태그 뒤에는 다른 문장을 추가하지 마세요. 태그만 반환하세요.
 
-            [이전 대화 내용]
-            {history}
-
             [사용자 입력]
             {user_input}
 
             [토리의 다음 행동 판단]
         """
-        prompt = f"""
-        {system_message}
-        {CONVERSATIONAL_GUIDELINES}
-        """.replace("{history}", conversation_history).replace("{user_input}", user_input)
-        
+        # prompt = f"""
+        # {system_message}
+        # {CONVERSATIONAL_GUIDELINES}
+        # """.replace("{history}", conversation_history).replace("{user_input}", user_input)
+
+        messages = [{"role": "system", "content": f"{system_message}\n{CONVERSATIONAL_GUIDELINES}"}]
+        messages.extend(conversation_history)  # [{"role": "user"/"assistant", "content": "..."}]
+        messages.append({"role": "user", "content": user_input})
         try:
-            response_from_llm = llm_client.predict(prompt, top_p=0.95, max_tokens=1024, temperature=0.2, api_name="/chat")
-            llm_output = response_from_llm.strip()
+            response_from_llm = llm_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                top_p=0.95, 
+                max_tokens=512, 
+                temperature=0.2, 
+                )
+            llm_output = response_from_llm.choices[0].message.content.strip()
             
             # LLM의 응답에 따라 분기 처리
             if "[정보완료]" in llm_output:

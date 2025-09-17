@@ -14,6 +14,7 @@ from app.utils.logger import setup_logger
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from app.db.database import tunnel
+from openai import OpenAI
 
 load_dotenv()
 logger = setup_logger()
@@ -45,8 +46,11 @@ async def lifespan(app: FastAPI):
         app.state.model = None
 
     try:
-        API_URL = "josangho99/memento-chatbot"
-        app.state.llm = Client(API_URL)
+        #gradio 무료 llm...(gpt-oss-20b)
+        #API_URL = "josangho99/memento-chatbot"
+        #app.state.llm = Client(API_URL)
+        API_KEY = os.getenv("OPENAI_API_KEY")
+        app.state.llm = OpenAI(api_key=API_KEY)
         app.state.system_message = "당신은 한국어를 사용하는 친절한 금융 전문가입니다. 재테크와 금융에 대한 질문에 답변해 주세요."
         logger.info("LLM model loading success!")
     except Exception as e:

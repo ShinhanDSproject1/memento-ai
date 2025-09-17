@@ -1,7 +1,6 @@
 from langchain_community.retrievers import BM25Retriever
 from langchain_teddynote.retrievers import KiwiBM25Retriever
 from langchain.retrievers import EnsembleRetriever
-from langchain_core.documents import Document
 from konlpy.tag import Kkma, Okt
 from langchain_community.vectorstores import FAISS
 from langchain.retrievers.multi_query import MultiQueryRetriever
