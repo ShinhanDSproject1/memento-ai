@@ -59,7 +59,6 @@ async def lifespan(app: FastAPI):
 
     try:
         reranker_model_url = 'kkresearch/bge-reranker-v2-m3-korean-finance'
-        #reranker_model_url = 'Dongjin-kr/ko-reranker'
         app.state.reranker = CrossEncoder(reranker_model_url)
 
     except Exception as e:

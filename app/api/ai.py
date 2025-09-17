@@ -4,13 +4,19 @@ from app.schemas.text_schema import RecommendationRequest
 from app.schemas.message import Message
 from app.db.database import get_db
 import pandas as pd
+import numpy as np
 import json
 import re
 from fastapi.responses import JSONResponse
-from app.utils.logger import setup_logger
-from app.utils.utils import deduplicate_results
 from app.core.recommend.chat_bot import LLMAgentService
-
+from langchain_core.embeddings import Embeddings
+from langchain_community.vectorstores.utils import maximal_marginal_relevance
+from app.utils.logger import setup_logger
+from app.utils.utils import (
+    deduplicate_results, 
+    find_boilerplate_phrases, 
+    remove_phrases_from_text,
+    )
 from app.core.recommend.faiss import(
     make_document,
     vector_embedding,
@@ -216,6 +222,10 @@ async def chat_with_bot(request: Request, message: Message):
 #종합 쿼리(각 문장을 하나로 통합한 문장)로 invoke후 re-rank
 @router.post("/recommend")
 async def recommend(request: Request, data: RecommendationRequest, db: Session = Depends(get_db)):
+    """
+    사용자 쿼리를 기반으로 멘토링 프로그램을 추천하는 API 엔드포인트.
+    파이프라인: 쿼리 종합 -> 앙상블 검색 -> MMR(다양성) -> 키워드 가중치 -> Reranker(정확성) -> 중복제거
+    """
     model = request.app.state.model
     llm_model = request.app.state.llm
     reranker_model = request.app.state.reranker
@@ -233,6 +243,11 @@ async def recommend(request: Request, data: RecommendationRequest, db: Session =
 
     mentos_df = select_mentos_data_to_df(db)
     logger.info(f"DataFrame loaded. Shape: {mentos_df.shape}")
+    boilerplate_list = find_boilerplate_phrases(mentos_df, content_column='mentos_content')
+    
+    mentos_df['mentos_content'] = mentos_df['mentos_content'].apply(
+        lambda text: remove_phrases_from_text(text, boilerplate_list)
+    )
     
     mentos_documents = make_document(mentos_df)
     logger.info("Documents created successfully.")
@@ -243,16 +258,26 @@ async def recommend(request: Request, data: RecommendationRequest, db: Session =
     mentos_ensemble_retriever = build_ensemble_retrieve_re(mentos_vector_retriever, Otk_retriever)
     
     synthesized_query = synthesize_query(queries_list, llm_model, system_message)
-    keywords = extract_keywords_kkma(queries_list)
 
-    retrieved_docs = mentos_ensemble_retriever.invoke(synthesized_query)
-    documents = rerank_documents_with_keywords(retrieved_docs, keywords)
-
-    query_doc_pairs = [[synthesized_query, doc.page_content] for doc in documents]
-    scores = reranker_model.predict(query_doc_pairs)
-    scored_docs = sorted(zip(scores, retrieved_docs), key=lambda x: x[0], reverse=True)
+    retrieved_docs = mentos_ensemble_retriever.invoke(synthesized_query, k=50)
+    query_embedding = np.array(model.embed_query(synthesized_query))
+    doc_embeddings = np.array(model.embed_documents([doc.page_content for doc in retrieved_docs]))
     
-    top_5_docs = scored_docs[:15]
+    mmr_selected_docs_indices = maximal_marginal_relevance(
+        query_embedding, 
+        doc_embeddings,
+        k=15,
+        lambda_mult=0.75
+    )
+
+    documents_for_rerank = [retrieved_docs[i] for i in mmr_selected_docs_indices]
+
+    # keywords = extract_keywords_kkma(queries_list)
+    # documents = rerank_documents_with_keywords(documents_for_rerank, keywords)
+
+    query_doc_pairs = [[synthesized_query, doc.page_content] for doc in documents_for_rerank]
+    scores = reranker_model.predict(query_doc_pairs)
+    scored_docs = sorted(zip(scores, documents_for_rerank), key=lambda x: x[0], reverse=True)
 
     final_results = [
         {
@@ -260,7 +285,7 @@ async def recommend(request: Request, data: RecommendationRequest, db: Session =
             "metadata": doc.metadata,
             "score": float(score)
         }
-        for score, doc in top_5_docs
+        for score, doc in scored_docs
     ]
 
     #mentos 중복 제거
