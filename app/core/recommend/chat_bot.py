@@ -8,17 +8,34 @@ class AgentExecutionError(Exception):
     pass
 
 class LLMAgentService:
-    async def run_agent_flow(self, user_input: str, llm_client, conversation_history: list, system_message: str) -> tuple[str, bool]:
+    async def run_agent_flow(self, user_input: str, llm_client, conversation_history: list, system_message: str, financial_dict_retriever) -> tuple[str, bool]:
         """
         LLM을 호출하여 사용자의 입력에 대한 응답과 상태를 판단합니다.
         """
-        CONVERSATIONAL_GUIDELINES = """
+        rag_context = "제공된 참고 정보 없음."
+        if financial_dict_retriever:
+            try:
+                retrieved_docs = financial_dict_retriever.invoke(user_input)
+                if retrieved_docs:
+                    # 2. 검색된 정보를 프롬프트에 넣기 좋은 형태로 가공합니다.
+                    context_lines = []
+                    for doc in retrieved_docs:
+                        # 예시: "용어: ETF, 설명: ..., 관련 슬롯: ..."
+                        # Document의 page_content나 metadata 구조에 따라 달라집니다.
+                        context_lines.append(doc.page_content) 
+                    rag_context = "\n---\n".join(context_lines)
+            
+            except Exception as e:
+                logger.error(f"Glossary RAG retrieval failed: {e}", exc_info=True)
+                rag_context = "참고 정보 검색 중 오류 발생."   
+        CONVERSATIONAL_GUIDELINES = f"""
             [역할]
-            당신은 사용자의 재정 목표 달성을 돕는 친절하고 스마트한 금융 어드바이저 '토리'입니다. 당신의 임무는 자연스러운 대화를 통해 사용자의 상황을 파악하고, 최종적으로 맞춤형 금융 정보를 추천하기 위해 필요한 핵심 정보들을 수집하는 것입니다.
+            당신은 사용자의 재정 목표 달성을 돕는 친절하고 스마트한 금융 어드바이저 '토리'입니다.
+            당신의 임무는 자연스러운 대화를 통해 사용자의 상황을 파악하고, 최종적으로 맞춤형 금융 정보를 추천하기 위해 필요한 핵심 정보들을 수집하는 것입니다.
             
             [수집 목표 정보 (Slots)]
             당신은 대화를 통해 아래 5가지 정보를 반드시 파악해야 합니다.
-            1. 관심 분야: (주식, 부동산, 저축, 펀드, 채무 관리 등)
+            1. 관심 분야: (주식, 부동산, 저축, 펀드, 채무 관리, 금융사기, 대출 등)
             2. 최종 목표: (내집마련, 노후준비, 목돈마련 등)
             3. 목표 금액: (구체적인 액수)
             4. 투자 경험: (초보, 경험자 등)
@@ -27,6 +44,12 @@ class LLMAgentService:
             [대화 전략]
             - **모든 판단은 태그로 표현합니다.** 답변 문장은 따로 생성하지 않고, 코드가 별도로 처리합니다.
             - 사용자의 답변이 기존 정보를 더 구체화하는 경우, 아래 예시와 완전히 동일한 JSON 형식으로 반환하세요.
+            
+            ---
+            [참고 정보]
+            다음은 사용자의 발언을 이해하는 데 도움이 될 수 있는 금융 용어 정보입니다. 이 정보를 바탕으로 사용자의 의도를 더 정확하게 분류하고, 해당하는 슬롯 값을 추출하세요.
+            {rag_context}
+            ---
             
             ✅ 올바른 예시:
             [업데이트: {"관심 분야": "주식"}]

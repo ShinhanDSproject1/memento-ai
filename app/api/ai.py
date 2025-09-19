@@ -3,37 +3,18 @@ from sqlalchemy.orm import Session
 from app.schemas.text_schema import RecommendationRequest
 from app.schemas.message import Message
 from app.db.database import get_db
-import pandas as pd
 import numpy as np
 import json
 import re
 from fastapi.responses import JSONResponse
 from app.core.recommend.chat_bot import LLMAgentService
-from langchain_core.embeddings import Embeddings
 from langchain_community.vectorstores.utils import maximal_marginal_relevance
 from app.utils.logger import setup_logger
-from app.utils.utils import (
-    deduplicate_results, 
-    find_boilerplate_phrases, 
-    remove_phrases_from_text,
-    )
 from app.core.recommend.faiss import(
-    make_document,
-    vector_embedding,
-    make_vector_retriever,
-    select_mentos_data_to_df
+    select_recommend_data_by_mentos_seq,
 )
-from app.core.recommend.retriever import(
-    okt_tokenize,
-    make_bm25_retriever,
-    ensemble_retriever,
-)
-
 from app.core.recommend.rerank import(
-    extract_keywords_kkma,
-    rerank_documents_with_keywords,
     synthesize_query,
-    build_ensemble_retrieve_re,
 )
 
 logger = setup_logger()
@@ -64,6 +45,7 @@ async def chat_with_bot(request: Request, message: Message):
     llm_model = request.app.state.llm
     system_message = request.app.state.system_message
     conversation_memory = request.app.state.conversation_memory
+    financial_dict_retriever = request.app.state.financial_dict_retriever
 
     if not llm_model:
         return JSONResponse({"error": "LLM 모델이 로드되지 않았습니다."}, status_code=500)
@@ -87,7 +69,8 @@ async def chat_with_bot(request: Request, message: Message):
             user_input=user_input,
             llm_client=llm_model,
             conversation_history=history_list,
-            system_message=system_message
+            system_message=system_message,
+            financial_dict_retriever = financial_dict_retriever
         )
         logger.info(f"LLM 에이전트 응답: {llm_agent_response}")
         logger.info(f"추천 준비 상태: {is_ready_check}")
@@ -221,15 +204,16 @@ async def chat_with_bot(request: Request, message: Message):
 
 #종합 쿼리(각 문장을 하나로 통합한 문장)로 invoke후 re-rank
 @router.post("/recommend")
-async def recommend(request: Request, data: RecommendationRequest, db: Session = Depends(get_db)):
+def recommend(request: Request, data: RecommendationRequest, db: Session = Depends(get_db)):
     """
     사용자 쿼리를 기반으로 멘토링 프로그램을 추천하는 API 엔드포인트.
-    파이프라인: 쿼리 종합 -> 앙상블 검색 -> MMR(다양성) -> 키워드 가중치 -> Reranker(정확성) -> 중복제거
+    파이프라인: 쿼리 종합 -> 앙상블 검색 -> MMR(다양성) -> 키워드 가중치 -> Reranker(정확성, 20개로 늘리기) -> 중복제거(사용자가 참여했던 강의로 변경) -> top3
     """
     model = request.app.state.model
     llm_model = request.app.state.llm
     reranker_model = request.app.state.reranker
     system_message = request.app.state.system_message
+    mentos_ensemble_retriever = request.app.state.ensemble_retriever
 
     if not model:
         return JSONResponse({"result": "임베딩 모델이 로드되지 않았습니다."}, status_code=500)
@@ -241,22 +225,6 @@ async def recommend(request: Request, data: RecommendationRequest, db: Session =
     member_seq = data.member_seq
     queries_list = data.queries
 
-    mentos_df = select_mentos_data_to_df(db)
-    logger.info(f"DataFrame loaded. Shape: {mentos_df.shape}")
-    boilerplate_list = find_boilerplate_phrases(mentos_df, content_column='mentos_content')
-    
-    mentos_df['mentos_content'] = mentos_df['mentos_content'].apply(
-        lambda text: remove_phrases_from_text(text, boilerplate_list)
-    )
-    
-    mentos_documents = make_document(mentos_df)
-    logger.info("Documents created successfully.")
-
-    mentos_vectorstore = vector_embedding(mentos_documents, model)
-    mentos_vector_retriever = make_vector_retriever(mentos_vectorstore)
-    Otk_retriever = make_bm25_retriever(mentos_documents, okt_tokenize)
-    mentos_ensemble_retriever = build_ensemble_retrieve_re(mentos_vector_retriever, Otk_retriever)
-    
     synthesized_query = synthesize_query(queries_list, llm_model, system_message)
 
     retrieved_docs = mentos_ensemble_retriever.invoke(synthesized_query, k=50)
@@ -266,14 +234,11 @@ async def recommend(request: Request, data: RecommendationRequest, db: Session =
     mmr_selected_docs_indices = maximal_marginal_relevance(
         query_embedding, 
         doc_embeddings,
-        k=15,
+        k=20,
         lambda_mult=0.75
     )
 
     documents_for_rerank = [retrieved_docs[i] for i in mmr_selected_docs_indices]
-
-    # keywords = extract_keywords_kkma(queries_list)
-    # documents = rerank_documents_with_keywords(documents_for_rerank, keywords)
 
     query_doc_pairs = [[synthesized_query, doc.page_content] for doc in documents_for_rerank]
     scores = reranker_model.predict(query_doc_pairs)
@@ -282,24 +247,27 @@ async def recommend(request: Request, data: RecommendationRequest, db: Session =
     final_results = [
         {
             "page_content": doc.page_content,
-            "metadata": doc.metadata,
-            "score": float(score)
+            "metadata": doc.metadata
+            #"score": float(score)
         }
         for score, doc in scored_docs
     ]
 
     #mentos 중복 제거
-    deduplicated_final_results = deduplicate_results(final_results)
+    #deduplicated_final_results = deduplicate_results(final_results)
 
-    final_top_3 = deduplicated_final_results[:3]
+    final_top_3 = final_results[:3]
+    
+    final_top_3_mentos_seqs = [doc['metadata']['mentos_seq'] for doc in final_top_3]
+    
+    final_recommend_data = select_recommend_data_by_mentos_seq(db, final_top_3_mentos_seqs)
 
     if member_seq in request.app.state.conversation_memory:
         del request.app.state.conversation_memory[member_seq]
         logger.info(f"사용자 {member_seq}의 챗봇 대화 기록이 초기화되었습니다.")
 
-    #front에 뭐 보내줘야하는지 확인필요! title,mento,mento_profile,price,bname?
     return JSONResponse(
-        content={"synthesized_query": synthesized_query, "documents": final_top_3},
+        content={"result": [data.model_dump() for data in final_recommend_data]},
         status_code=200,
     )
 

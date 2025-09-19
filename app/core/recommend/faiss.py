@@ -8,7 +8,12 @@ from sqlalchemy.orm import Session
 import pandas as pd
 from bs4 import BeautifulSoup
 from sqlalchemy import text
+from langchain.document_loaders import PyPDFLoader
+from app.utils.logger import setup_logger
+from app.schemas.recommend_mentos import RecommendData
 import re
+
+logger = setup_logger()
 
 def make_document(df):
     documents = []
@@ -42,3 +47,27 @@ def select_mentos_data_to_df(db: Session):
     mentos_df['mentos_content'] = mentos_df['mentos_content'].apply(lambda x: BeautifulSoup(x, 'html.parser').get_text(strip=True))
 
     return mentos_df
+
+def select_recommend_data_by_mentos_seq(db:Session, mentos_seq_list):
+    result = db.execute(text("""SELECT m.mentos_seq, m.mentos_image, m.mentos_title, m.price, mp.mento_profile_image 
+                            FROM mentos m
+                            LEFT JOIN member ON m.member_seq = member.member_seq
+                            LEFT JOIN mento_profile mp ON member.member_seq = mp.member_seq
+                            WHERE mentos_seq IN :mentos_seq"""), 
+                        {"mentos_seq": tuple(mentos_seq_list)})
+    rows = result.fetchall()
+    logger.info(rows)
+    return [RecommendData(
+        mentos_seq=row[0],
+        mentos_image=row[1],
+        mentos_title=row[2],
+        price=row[3],
+        mento_profile_image=row[4]
+    ) for row in rows]
+
+def financial_dict_pdf_load():
+    loader = PyPDFLoader("/assets/2020_경제금융용어 700선_게시.pdf")
+    texts = loader.load_and_split()
+    texts = texts[13:]
+    texts = texts[:-1]
+    return texts
