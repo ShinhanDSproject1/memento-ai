@@ -1,0 +1,48 @@
+name: Deploy FastAPI to Production
+
+on:
+  push:
+    branches:
+      - main # main 브랜치에 푸시될 때 실행
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest # 실행 환경
+    environment: production # 사용할 GitHub Environment 지정
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # (선택) Podman 설치
+      - name: Set up Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install podman
+
+      - name: Build Podman image
+        run: podman build -t my-fastapi-app .
+
+      - name: Run Podman container with secrets
+        run: |
+          podman stop fastapi_container || true && podman rm fastapi_container || true
+
+          podman run -d \
+            -p 8001:8001 \
+            --name fastapi_container \
+            -e AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
+            -e AWS_REGION=${{ secrets.AWS_REGION }} \
+            -e AWS_S3_BUCKET_NAME=${{ secrets.AWS_S3_BUCKET_NAME }} \
+            -e AWS_S3_UPLOAD_DIR=${{ secrets.AWS_S3_UPLOAD_DIR }} \
+            -e AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
+            -e DB_HOST=${{ secrets.DB_HOST }} \
+            -e DB_NAME=${{ secrets.DB_NAME }} \
+            -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+            -e DB_PORT=${{ secrets.DB_PORT }} \
+            -e DB_USER=${{ secrets.DB_USER }} \
+            -e HF_TOKEN=${{ secrets.HF_TOKEN }} \
+            -e OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} \
+            -e SSH_HOST=${{ secrets.SSH_HOST }} \
+            -e SSH_PASSWORD=${{ secrets.SSH_PASSWORD }} \
+            -e SSH_USER=${{ secrets.SSH_USER }} \
+            my-fastapi-app
