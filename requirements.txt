@@ -65,6 +65,7 @@ fsspec==2024.6.1
 gradio==5.45.0
 gradio_client==1.13.0
 groovy==0.1.2
+gunicorn==23.0.0
 h11==0.16.0
 hangul-jamo==1.0.1
 hf-xet==1.1.9
