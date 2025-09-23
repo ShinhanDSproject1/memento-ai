@@ -84,10 +84,7 @@ async def lifespan(app: FastAPI):
         logger.error("DB connect error: %s", err, exc_info=True)
     
     try:
-        #model_name = "josangho99/ko-paraphrase-multilingual-MiniLM-L12-v2-multiTask"
-        #model_name = "korruz/bge-base-financial-matryoshka"
-        #model_name = "intfloat/multilingual-e5-small"
-        model_name = "intfloat/multilingual-e5-base"
+        model_name = "intfloat/multilingual-e5-large-instruct"
         app.state.model = HuggingFaceEmbeddings(
             model_name=model_name,
             model_kwargs={'device':'cpu'},
@@ -119,8 +116,9 @@ async def lifespan(app: FastAPI):
         app.state.ensemble_retriever = None
 
     try:
-        reranker_model_url = 'kkresearch/bge-reranker-v2-m3-korean-finance'
+        reranker_model_url = 'BAAI/bge-reranker-v2-m3'
         app.state.reranker = CrossEncoder(reranker_model_url)
+        logger.info("Reranker model loading success")
 
     except Exception as e:
         logger.error("Reranker model loading error: %s", e, exc_info=True)

@@ -226,7 +226,6 @@ def recommend(request: Request, data: RecommendationRequest, db: Session = Depen
     queries_list = data.queries
 
     synthesized_query = synthesize_query(queries_list, llm_model, system_message)
-
     retrieved_docs = mentos_ensemble_retriever.invoke(synthesized_query, k=50)
     query_embedding = np.array(model.embed_query(synthesized_query))
     doc_embeddings = np.array(model.embed_documents([doc.page_content for doc in retrieved_docs]))
@@ -247,11 +246,13 @@ def recommend(request: Request, data: RecommendationRequest, db: Session = Depen
     final_results = [
         {
             "page_content": doc.page_content,
-            "metadata": doc.metadata
-            #"score": float(score)
+            "metadata": doc.metadata,
+            "score": float(score)
         }
         for score, doc in scored_docs
     ]
+    rerank_scores = [doc['score'] for doc in final_results]
+    logger.info(f"리랭킹 후 최종 점수: {rerank_scores}")
 
     #mentos 중복 제거
     #deduplicated_final_results = deduplicate_results(final_results)

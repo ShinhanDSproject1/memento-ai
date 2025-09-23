@@ -66,7 +66,7 @@ def select_recommend_data_by_mentos_seq(db:Session, mentos_seq_list):
     ) for row in rows]
 
 def financial_dict_pdf_load():
-    loader = PyPDFLoader("/assets/2020_경제금융용어 700선_게시.pdf")
+    loader = PyPDFLoader("assets/2020_경제금융용어 700선_게시.pdf")
     texts = loader.load_and_split()
     texts = texts[13:]
     texts = texts[:-1]
