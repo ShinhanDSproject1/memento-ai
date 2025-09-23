@@ -1,5 +1,4 @@
 from langchain_community.retrievers import BM25Retriever
-from langchain_teddynote.retrievers import KiwiBM25Retriever
 from langchain.retrievers import EnsembleRetriever
 from konlpy.tag import Kkma, Okt
 from langchain_community.vectorstores import FAISS
@@ -33,11 +32,8 @@ def okt_tokenize(text):
     return [token for token in okt.morphs(text)]
 
 #내부 코드에 k=4가 명시되어 있음
-def make_bm25_retriever(documents, tokenize = None):
-    if(tokenize):
-        return BM25Retriever.from_documents(documents, preprocess_func=tokenize)
-    #score가 너무 떨어짐, 당연히 리스트도 별로 
-    return KiwiBM25Retriever.from_documents(documents)
+def make_bm25_retriever(documents, tokenize=None):
+    return BM25Retriever.from_documents(documents, preprocess_func=tokenize)
 
 def invoke_gradio_llm(input_data, llm_model):
     """
