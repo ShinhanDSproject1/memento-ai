@@ -6,6 +6,9 @@ results/
 *.log
 seomin_fin_edu_expanded_long.csv
 
+.ipynb_checkpoints/
+.gradio/
+
 .git/
 .gitignore
 __pycache__/
