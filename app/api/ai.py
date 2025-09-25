@@ -89,8 +89,9 @@ async def chat_with_bot(request: Request, message: Message):
             logger.info("무관한 질문으로 판단되어 일반 대화로 기록합니다.")
         elif llm_agent_response.startswith('{"update":'):
             try:
-                # 이 부분을 별도의 try-except 블록으로 감싸야 함
-                update_data_json_string = re.search(r'\{.*?\}', llm_agent_response).group(0)
+                match = re.search(r'\{.*\}', llm_agent_response, re.DOTALL)
+                if match:
+                    update_data_json_string = match.group(0)
                 logger.info(f"파싱할 JSON 문자열: {update_data_json_string}")
                 update_data = json.loads(update_data_json_string)
                 logger.info(f"성공적으로 파싱된 업데이트 데이터: {update_data}")
