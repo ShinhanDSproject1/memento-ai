@@ -9,7 +9,6 @@ from sentence_transformers import CrossEncoder
 import mysql.connector
 from app.db.database import get_db
 import os
-from gradio_client import Client
 from app.utils.logger import setup_logger
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text

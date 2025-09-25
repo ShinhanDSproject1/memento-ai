@@ -61,9 +61,8 @@ def synthesize_query(queries: List[str], llm_client, system_message=""):
 
 # --- 최종 앙상블 리트리버 빌더 ---
 def build_ensemble_retrieve_re(vector_retriever, bm25_retriever):
-    # (의도 종합 쿼리가 MultiQuery의 역할을 대신함)
     
-    # 두 리트리버를 RRF로 융합
+    #EnsembleRetriever가 RRF(Reciprocal rank fusion) 내장
     return EnsembleRetriever(
         retrievers=[bm25_retriever, vector_retriever],
         weights=[0.25, 0.75]

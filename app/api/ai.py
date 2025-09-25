@@ -31,7 +31,7 @@ async def chatbot_by_gpt(request: Request):
                 status_code=500,
         )
     
-    result = '안녕하세요! 당신의 똑똑한 금융 친구 토리예요. 저와의 대화를 통해 복잡한 금융 이야기를 재미있게 풀어가고, 당신에게 꼭 맞는 서비스를 찾아 드릴게요. 지금 혹시 가장 고민하고 있거나 궁금한 점이 있으신가요? 저와의 대화를 통해 복잡한 금융 이야기를 재미있게 풀어가고, 당신에게 꼭 맞는 서비스를 찾아 드릴게요. 지금 혹시 가장 고민하고 있거나 궁금한 점이 있으신가요?'
+    result = "안녕하세요! 당신의 똑똑한 금융 친구 토리예요. 어떤 금융 분야에 관심이 있으신가요? (예: 주식, 부동산, 저축 등) 또는 어떤 재정 목표를 이루고 싶으신지 알려주세요!"
     
     return JSONResponse(
         {
@@ -91,6 +91,7 @@ async def chat_with_bot(request: Request, message: Message):
             try:
                 # 이 부분을 별도의 try-except 블록으로 감싸야 함
                 update_data_json_string = re.search(r'\{.*?\}', llm_agent_response).group(0)
+                logger.info(f"파싱할 JSON 문자열: {update_data_json_string}")
                 update_data = json.loads(update_data_json_string)
                 logger.info(f"성공적으로 파싱된 업데이트 데이터: {update_data}")
                 # 이제 update_data 딕셔너리를 사용
@@ -255,7 +256,6 @@ def recommend(request: Request, data: RecommendationRequest, db: Session = Depen
     logger.info(f"리랭킹 후 최종 점수: {rerank_scores}")
 
     #mentos 중복 제거
-    #deduplicated_final_results = deduplicate_results(final_results)
 
     final_top_3 = final_results[:3]
     
@@ -271,77 +271,3 @@ def recommend(request: Request, data: RecommendationRequest, db: Session = Depen
         content={"result": [data.model_dump() for data in final_recommend_data]},
         status_code=200,
     )
-
-#각 쿼리를 순회돌아 invoke하여 후보군을 형성한 후 종합 쿼리(각 문장을 하나로 통합한 문장)로 re-rank
-# @router.post("/recommend2")
-# async def recommend(request: Request, queries: TextRequest, db: Session = Depends(get_db)):
-#     model = request.app.state.model
-#     llm_model = request.app.state.llm
-#     reranker_model = request.app.state.reranker
-
-#     if not model:
-#         return JSONResponse(
-#             {"result": "임베딩 모델이 로드되지 않았습니다."},
-#             status_code=500,
-#         )
-#     if not llm_model:
-#         return JSONResponse(
-#             {"result": "LLM 모델이 로드되지 않았습니다."},
-#             status_code=500,
-#         )
-#     if not reranker_model:
-#         return JSONResponse(
-#             {"result": "Reranker 모델이 로드되지 않았습니다."},
-#             status_code=500,
-#         )
-    
-#     llm_model = request.app.state.llm
-#     mentos_df = select_mentos_data_to_df(db)
-#     logger.info(f"DataFrame loaded. Shape: {mentos_df.shape}")
-    
-#     mentos_documents = make_document(mentos_df)
-#     logger.info("Documents created successfully.")
-
-#     mentos_vectorstore = vector_embedding(mentos_documents, model)
-#     mentos_vector_retriever = make_vector_retriever(mentos_vectorstore)
-#     Otk_retriever = make_bm25_retriever(mentos_documents, okt_tokenize)
-#     mentos_ensemble_retriever = ensemble_retriever(mentos_vector_retriever, Otk_retriever, llm_model)
-    
-#     queries_list = queries.queries
-
-#     all_retrieved_docs = {} # 중복 제거를 위해 dict 사용 (key: mentos_seq)
-#     for query in queries_list:
-#         retrieved_docs = mentos_ensemble_retriever.invoke(query)
-#         for doc in retrieved_docs:
-#             mentos_seq = doc.metadata.get("mentos_seq")
-#             if mentos_seq and mentos_seq not in all_retrieved_docs:
-#                 all_retrieved_docs[mentos_seq] = doc
-
-#     unique_documents = list(all_retrieved_docs.values())
-
-#     if not unique_documents:
-#         return JSONResponse(
-#             content={"synthesized_query": "N/A", "documents": []},
-#             status_code=200,
-#         )
-    
-#     synthesized_query = synthesize_query(queries_list, llm_model)
-
-#     query_doc_pairs = [[synthesized_query, doc.page_content] for doc in unique_documents]
-#     scores = reranker_model.predict(query_doc_pairs)
-#     scored_docs = sorted(zip(scores, unique_documents), key=lambda x: x[0], reverse=True)
-#     top_5_docs = scored_docs[:5]
-
-#     final_results = [
-#         {
-#             "page_content": doc.page_content,
-#             "metadata": doc.metadata,
-#             "score": float(score)
-#         }
-#         for score, doc in top_5_docs
-#     ]
-
-#     return JSONResponse(
-#         content={"synthesized_query": synthesized_query, "documents": final_results},
-#         status_code=200,
-#     )

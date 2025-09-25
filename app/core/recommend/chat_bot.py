@@ -1,6 +1,8 @@
 import json
 from app.utils.logger import setup_logger
 import re
+from langchain_openai import ChatOpenAI
+from langchain.retrievers.multi_query import MultiQueryRetriever
 
 logger = setup_logger()
 
@@ -15,7 +17,17 @@ class LLMAgentService:
         rag_context = "제공된 참고 정보 없음."
         if financial_dict_retriever:
             try:
-                retrieved_docs = financial_dict_retriever.invoke(user_input)
+                llm_for_retriever = ChatOpenAI(
+                    model_name="gpt-4o-mini",
+                    max_tokens=500,
+                    temperature=0,
+                    api_key=llm_client.api_key
+                )
+                multi_query_retriever = MultiQueryRetriever.from_llm(
+                    retriever=financial_dict_retriever, # 기존 리트리버를 그대로 활용
+                    llm=llm_for_retriever # 질문 생성을 위한 LLM
+                )
+                retrieved_docs = multi_query_retriever.get_relevant_documents(query=user_input)
                 if retrieved_docs:
                     # 2. 검색된 정보를 프롬프트에 넣기 좋은 형태로 가공합니다.
                     context_lines = []
@@ -30,7 +42,7 @@ class LLMAgentService:
                 rag_context = "참고 정보 검색 중 오류 발생."   
         CONVERSATIONAL_GUIDELINES = f"""
             [역할]
-            당신은 사용자의 재정 목표 달성을 돕는 친절하고 스마트한 금융 어드바이저 '토리'입니다.
+            당신은 사용자의 재정 목표 달성을 돕는 친절하고 스마트한 전문 금융 어드바이저 '토리'입니다.
             당신의 임무는 자연스러운 대화를 통해 사용자의 상황을 파악하고, 최종적으로 맞춤형 금융 정보를 추천하기 위해 필요한 핵심 정보들을 수집하는 것입니다.
             
             [수집 목표 정보 (Slots)]
@@ -76,10 +88,6 @@ class LLMAgentService:
 
             [토리의 다음 행동 판단]
         """
-        # prompt = f"""
-        # {system_message}
-        # {CONVERSATIONAL_GUIDELINES}
-        # """.replace("{history}", conversation_history).replace("{user_input}", user_input)
 
         messages = [{"role": "system", "content": f"{system_message}\n{CONVERSATIONAL_GUIDELINES}"}]
         messages.extend(conversation_history)  # [{"role": "user"/"assistant", "content": "..."}]
@@ -103,7 +111,7 @@ class LLMAgentService:
             
             elif "[업데이트:" in llm_output:
                 try:
-                    update_data_match = re.search(r'\[업데이트:(\{.*?\})\]', llm_output)
+                    update_data_match = re.search(r'\[업데이트:\s*(\{.*?\})\]', llm_output)
                     if update_data_match:
                         raw_json = update_data_match.group(1)
 
@@ -111,11 +119,12 @@ class LLMAgentService:
                         # ex) {"'관심 분야'": "주식"}  -> {"관심 분야": "주식"}
                         cleaned_json = re.sub(r"'([가-힣\s]+)'(?=\s*:)", r'"\1"', raw_json)  # key에 작은따옴표 → 큰따옴표
                         cleaned_json = re.sub(r'"{2,}([가-힣\s]+)"{2,}(?=\s*:)', r'"\1"', cleaned_json)  # 겹따옴표 → 하나로
-
+                        logger.info(f"파싱 전 {cleaned_json}")
                         update_data = json.loads(cleaned_json)
-
+                        logger.info(f"파싱 후 {update_data}")
                         return (json.dumps({"update": update_data}, ensure_ascii=False), False)
                     else:
+                        logger.error(f"업데이트 정규식 매칭 실패. LLM 출력: {llm_output}")
                         logger.info("업데이트 부분 오류")
                         return ("챗봇 서비스에 문제가 발생했습니다. 잠시 후 다시 시도해주세요.", False)
                 except (json.JSONDecodeError, IndexError) as e:
