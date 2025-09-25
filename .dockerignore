@@ -1,10 +1,10 @@
 kor-nlu-datasets/
-memento_data
+memento_data/
 memento-ai/
 results/
 *.ipynb
 *.log
-seomin_fin_edu_expanded_long.csv
+*.csv
 
 .ipynb_checkpoints/
 .gradio/
@@ -15,3 +15,7 @@ __pycache__/
 .env
 *.pyc
 .gitattributes
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -9,7 +9,7 @@ def upload_certification_image(png_bytes: bytes, ext: str = "png") -> str:
     AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
     AWS_REGION = os.getenv("AWS_REGION")
     AWS_BUCKET_NAME = os.getenv("AWS_S3_BUCKET_NAME")
-    AWS_UPLOAD_DIR = os.getenv("AWS_S3_UPLOAD_DIR", "certification")
+    AWS_UPLOAD_DIR = os.getenv("AWS_S3_UPLOAD_DIR_AI", "certification")
 
     s3_client = boto3.client(
         "s3",

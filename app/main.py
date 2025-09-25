@@ -160,3 +160,7 @@ app.add_middleware(
 # 라우터 등록
 app.include_router(cert_router, prefix="/certs", tags=["certificates"])
 app.include_router(ai_router, prefix="/ai", tags=["ai"])
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
