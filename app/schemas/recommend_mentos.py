@@ -6,3 +6,4 @@ class RecommendData(BaseModel):
     mentos_title: str
     price: int
     mento_profile_image: str | None
+    region: str

@@ -49,7 +49,7 @@ def select_mentos_data_to_df(db: Session):
     return mentos_df
 
 def select_recommend_data_by_mentos_seq(db:Session, mentos_seq_list):
-    result = db.execute(text("""SELECT m.mentos_seq, m.mentos_image, m.mentos_title, m.price, mp.mento_profile_image 
+    result = db.execute(text("""SELECT m.mentos_seq, m.mentos_image, m.mentos_title, m.price, mp.mento_profile_image, mp.mento_bname
                             FROM mentos m
                             LEFT JOIN member ON m.member_seq = member.member_seq
                             LEFT JOIN mento_profile mp ON member.member_seq = mp.member_seq
@@ -62,7 +62,8 @@ def select_recommend_data_by_mentos_seq(db:Session, mentos_seq_list):
         mentos_image=row[1],
         mentos_title=row[2],
         price=row[3],
-        mento_profile_image=row[4]
+        mento_profile_image=row[4],
+        region=row[5]
     ) for row in rows]
 
 def financial_dict_pdf_load():

@@ -119,7 +119,24 @@ async def chat_with_bot(request: Request, message: Message):
                 history_list.append({"role": "user", "content": user_input, "topic": list(update_data.keys())[0]})
                 logger.info(f"새로운 항목 추가: {user_input} (주제: {list(update_data.keys())[0]})")
             
-            second_messages = [{"role": "system", "content": system_message}]
+            next_step_prompt = f"""
+                {system_message}
+
+                당신은 사용자와 대화하며 아래 5가지 정보를 수집해야 합니다.
+                1. 관심 분야
+                2. 최종 목표
+                3. 목표 금액
+                4. 투자 경험
+                5. 목표 기간
+
+                현재까지 수집된 정보는 다음과 같습니다: {history_list}
+                
+                방금 사용자의 정보가 업데이트되었습니다. 자연스럽게 대화를 이어가면서, 아직 수집되지 않은 나머지 정보 중 하나를 얻기 위한 질문을 한 문장으로 간결하게 해주세요.
+                예시: "아, 주식에 관심이 있으시군요! 혹시 투자 경험은 어느 정도 되시나요?"
+            """
+            
+            second_messages = [{"role": "system", "content": next_step_prompt}]
+            second_messages.append({"role": "user", "content": user_input})
             for item in history_list:
                 second_messages.append({"role": item["role"], "content": item["content"]})
                 second_messages.append({"role": "user", "content": user_input})
@@ -127,7 +144,7 @@ async def chat_with_bot(request: Request, message: Message):
             second_response = llm_model.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=second_messages,
-                max_tokens=1024,
+                max_tokens=512,
                 temperature=0.2,
                 top_p=0.95
             )

@@ -1,5 +1,5 @@
 from pydantic import BaseModel
 
 class Message(BaseModel):
-    member_seq: int
+    member_seq: str
     content: str
