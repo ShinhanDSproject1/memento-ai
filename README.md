@@ -5,7 +5,7 @@
 ```
 git clone https://github.com/ShinhanDSproject1/memento-ai.git
 ```
-- Python link: [Python-3.13.7][PythonLink]
+- Python link: [Python-3.13.5][PythonLink]
 - venv 참고blog: [호무비 파이썬 가상환경(venv) 종류 및 사용법 정리][VenvLink]
 - TesseractOCR: [TesseractOCR-Github][VenvLink]
 - TesseractOCR 참고blog: [콩다코딩 OCRTesseract OCR 설치 및 사용방법][TesseractHelpLink]
@@ -17,7 +17,7 @@ pip install -r requirements.txt
 - FastAPI link: [FastAPI][FastAPILink]
 - Pytorch link: [Pytorch][PytorchLink]
 
-[PythonLink]: https://www.python.org/downloads/release/python-3137/
+[PythonLink]: https://www.python.org/downloads/release/python-3135/
 [VenvLink]: https://homubee.tistory.com/38
 [TesseractOCRLink]: https://github.com/UB-Mannheim/tesseract/wiki
 [TesseractHelpLink]: https://kongda.tistory.com/93
@@ -38,3 +38,4 @@ uvicorn app.main:app --host 0.0.0.0 --port 8001
 👉[노션페이지][NotionLink]
 
 [NotionLink]: https://unleashed-loan-37c.notion.site/?source=copy_link
+
