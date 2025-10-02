@@ -1,6 +1,7 @@
 ﻿# MEMENTO-AI
 신한DS 금융SW아카데미 5기 2회차 Team 메멘토의 FASTAPI기반 AI 및 OCR 레포지토리입니다. :smiley: <br>
 :warning: 본 프로젝트는 개인의 AWS, OPENAI API KEY와 Huggingface HF_TOKEN 및 Mysql 관련 환경변수를 .env파일에 등록해주셔야 동작합니다!
+:warning: 현재 uvloop 라이브러리로 인해 Mac과 리눅스 환경에서만 동작 가능합니다...(WSL 환경 세팅 방법 추가 예정)
 # 📦 Install
 ```
 git clone https://github.com/ShinhanDSproject1/memento-ai.git
@@ -38,5 +39,6 @@ uvicorn app.main:app --host 0.0.0.0 --port 8001
 👉[세팅 참고 노션페이지][NotionLink]
 
 [NotionLink]: https://unleashed-loan-37c.notion.site/?source=copy_link
+
 
 
