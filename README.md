@@ -36,9 +36,11 @@ uvicorn app.main:app --host 0.0.0.0 --port 8001
 ```
 
 👉 **배포용 DockerFile도 활용가능** <br>
-👉[세팅 참고 노션페이지][NotionLink]
+👉[MAC 세팅 참고 노션페이지][NotionLink-MAC]
+👉[WSL 세팅 참고 노션페이지][NotionLink-WSL]
 
-[NotionLink]: https://unleashed-loan-37c.notion.site/?source=copy_link
+[NotionLink-MAC]: https://unleashed-loan-37c.notion.site/?source=copy_link
+[NotionLink-WSL] :https://unleashed-loan-37c.notion.site/wsl-memento-ai?source=copy_link
 
 
 
